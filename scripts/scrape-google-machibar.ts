@@ -7,8 +7,7 @@ const RESULTS_FILE = join(DATA_DIR, "google-search-results.json");
 
 interface SearchResult {
   title: string;
-  link: string;
-  snippet: string;
+  link: string | null;
 }
 
 interface QueryEntry {
@@ -95,22 +94,19 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult[]> 
 
   await humanScroll(page);
 
-  const results = await page.$$eval("div.g", (divs) =>
-    divs.slice(0, 5).map((div) => {
-      const titleEl = div.querySelector("h3");
-      const linkEl = div.querySelector("a[href]");
-      const snippetEl = div.querySelector(
-        'div[data-sncf], div.VwiC3b, div[style*="-webkit-line-clamp"]',
-      );
-      return {
-        title: titleEl?.textContent?.trim() || "",
-        link: linkEl?.getAttribute("href") || "",
-        snippet: snippetEl?.textContent?.trim() || "",
-      };
-    }),
-  );
+  const links = page.locator("a:has(h3)")
+  const count = await links.count()
 
-  return results.filter((r) => r.link && r.title);
+  const result = await Promise.all(Array.from({ length: Math.min(count, 10) }, (_, i) => links.nth(i))
+    .map(async l =>
+  ({
+    title: await l.locator("h3").innerText(),
+    link: await l.getAttribute("href")
+    })))
+
+  console.log(result)
+
+  return result
 }
 
 async function loadExistingResults(): Promise<Map<string, QueryEntry>> {
