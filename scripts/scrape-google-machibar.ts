@@ -60,12 +60,37 @@ async function humanScroll(page: Page) {
   await sleep(200 + Math.random() * 300);
 }
 
+async function isSorryPage(page: Page): Promise<boolean> {
+  const url = page.url();
+  if (url.includes("/sorry/")) return true;
+  const sorryForm = await page.$('form[action*="sorry"]');
+  if (sorryForm) return true;
+  const sorryText = await page.$('div:has-text("unusual traffic")');
+  if (sorryText) return true;
+  return false;
+}
+
 async function googleSearch(page: Page, query: string): Promise<SearchResult[]> {
   await page.goto(`https://www.google.com/search?q=${encodeURIComponent(query)}&hl=ja&num=5`, {
     waitUntil: "domcontentloaded",
     timeout: 30000,
   });
-  await sleep(60000 + Math.random() * 1200);
+  await sleep(3000 + Math.random() * 2000);
+
+  if (await isSorryPage(page)) {
+    console.error("  sorry page detected, waiting 10 minutes...");
+    await sleep(600_000 + Math.random() * 60_000);
+    await page.goto(`https://www.google.com/search?q=${query}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+    await sleep(3000 + Math.random() * 2000);
+    if (await isSorryPage(page)) {
+      console.error("  still blocked after wait, skipping query");
+      return [];
+    }
+  }
+
   await dismissConsent(page);
 
   await humanScroll(page);
