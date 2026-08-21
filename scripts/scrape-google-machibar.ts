@@ -70,7 +70,7 @@ async function isSorryPage(page: Page): Promise<boolean> {
 }
 
 async function googleSearch(page: Page, query: string): Promise<SearchResult[]> {
-  await page.goto(`https://www.google.com/search?q=${encodeURIComponent(query)}&hl=ja&num=5`, {
+  await page.goto(`https://www.google.com/search?q=${query}`, {
     waitUntil: "domcontentloaded",
     timeout: 30000,
   });
@@ -145,21 +145,11 @@ async function main() {
 
   const browser = await chromium.launch({
     headless: false,
-    args: [
-      "--disable-blink-features=AutomationControlled",
-      "--no-sandbox",
-    ],
   });
-  const page = await browser.newPage({
-    userAgent:
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    locale: "ja-JP",
-    timezoneId: "Asia/Tokyo",
-  });
-
-  await page.goto("https://www.google.com", { waitUntil: "domcontentloaded" });
-  await dismissConsent(page);
-  await sleep(1500);
+  const context = await browser.newContext({
+      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+})
+  const page = await context.newPage();
 
   let done = 0;
   for (const { query, source, name } of pending) {
