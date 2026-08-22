@@ -6,15 +6,21 @@ const DATA_DIR = join(import.meta.dir, "..", "data");
 const RESULTS_FILE = join(DATA_DIR, "google-search-results.json");
 
 interface SearchResult {
-  title: string;
-  link: string | null;
+  results: {
+    title: string;
+    link: string | null;
+  }[];
+  aiOverview: {
+    text: string;
+    links: string[];
+  }
 }
 
 interface QueryEntry {
   query: string;
   source: string;
   name: string;
-  results: SearchResult[];
+  results: SearchResult | null;
 }
 
 function sleep(ms: number) {
@@ -69,7 +75,7 @@ async function isSorryPage(page: Page): Promise<boolean> {
   return false;
 }
 
-async function googleSearch(page: Page, query: string): Promise<SearchResult[]> {
+async function googleSearch(page: Page, query: string): Promise<SearchResult| null> {
   await page.goto(`https://www.google.com/search?q=${query}`, {
     waitUntil: "domcontentloaded",
     timeout: 30000,
@@ -86,7 +92,7 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult[]> 
     await sleep(3000 + Math.random() * 2000);
     if (await isSorryPage(page)) {
       console.error("  still blocked after wait, skipping query");
-      return [];
+      return null;
     }
   }
 
@@ -97,16 +103,20 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult[]> 
   const links = page.locator("a:has(h3)")
   const count = await links.count()
 
-  const result = await Promise.all(Array.from({ length: Math.min(count, 10) }, (_, i) => links.nth(i))
+  const results = await Promise.all(Array.from({ length: Math.min(count, 10) }, (_, i) => links.nth(i))
     .map(async l =>
   ({
     title: await l.locator("h3").innerText(),
     link: await l.getAttribute("href")
     })))
 
-  console.log(result)
 
-  return result
+  const aiOverviewText = await page.locator("section").innerText()
+  const aiOverviewLinks = await page.locator("section").locator("a").evaluateAll(elements =>
+    elements.map(el => (el.href))
+  );
+
+  return {results, "aiOverview": {text:aiOverviewText, links:aiOverviewLinks}}
 }
 
 async function loadExistingResults(): Promise<Map<string, QueryEntry>> {
@@ -132,7 +142,9 @@ async function main() {
     for (const entry of data) {
       const name = extractName(entry, file);
       if (!name) continue;
-      queries.push({ query: `${name} 街バル`, source: file, name });
+      const isCci = file === "ccisearch-cci.json";
+      const query = isCci ? `${name}商工会議所 街バル` : `${name} 街バル`;
+      queries.push({ query, source: file, name });
     }
   }
 
