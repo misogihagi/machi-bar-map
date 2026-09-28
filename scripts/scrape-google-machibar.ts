@@ -122,9 +122,16 @@ async function main() {
     for (const entry of data) {
       const raw = entry.cci_name ?? entry.name;
       if (typeof raw !== "string" || !raw.trim()) continue;
-      const name = raw.trim();
       const isCci = file === "ccisearch-cci.json";
-      const query = isCci ? `${name}商工会議所 街バル` : `${name} 街バル`;
+      
+      // (一社)となっているものは商工会議所ではなく商工会議所連合会
+      const isFederation = /^[(（]一社[)）]/.test(raw);
+      const name = isFederation
+        ? `${raw.replace(/^[(（]一社[)）]\s*/, "")}商工会議所連合会`
+        : raw.trim();
+      const query = isCci
+        ? `${name} 街バル`
+        : `${raw.trim()} 街バル`;
       queries.push({ query, source: file, name });
     }
   }
