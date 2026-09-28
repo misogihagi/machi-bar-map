@@ -34,31 +34,6 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function extractName(entry: Record<string, unknown>, filename: string): string | undefined {
-  if ("cci_name" in entry && typeof entry.cci_name === "string") {
-    return entry.cci_name
-      .replace(/^\s*[（(]一社[)）]\s*/, "")
-      .replace(/^\s*在日\s*/, "")
-      .replace(/^\s*日本\s*/, "")
-      .replace(/\s*商工会議所$/, "")
-      .replace(/\s*商工会$/, "")
-      .replace(/\s*商業会議所$/, "")
-      .trim() || undefined;
-  }
-  if ("name" in entry && typeof entry.name === "string") {
-    if (filename === "syoutengai.json") return entry.name as string;
-    if (filename === "shokokai.json") {
-      return (entry.name as string)
-        .replace(/\s*商工会連合会$/, "")
-        .replace(/\s*商工会$/, "")
-        .replace(/\s*商工会議所$/, "")
-        .replace(/\s*商工会議所連合会$/, "")
-        .trim() || undefined;
-    }
-  }
-  return undefined;
-}
-
 async function dismissConsent(page: Page) {
   const consentBtn = await page.$('button:has-text("同意"), button:has-text("Accept"), form[action*="sorry"] input[type="submit"]');
   if (consentBtn) {
@@ -145,8 +120,9 @@ async function main() {
       await readFile(join(DATA_DIR, file), "utf-8"),
     );
     for (const entry of data) {
-      const name = extractName(entry, file);
-      if (!name) continue;
+      const raw = entry.cci_name ?? entry.name;
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      const name = raw.trim();
       const isCci = file === "ccisearch-cci.json";
       const query = isCci ? `${name}商工会議所 街バル` : `${name} 街バル`;
       queries.push({ query, source: file, name });
