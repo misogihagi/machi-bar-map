@@ -1,9 +1,16 @@
 import { chromium, type Page } from "playwright";
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const DATA_DIR = join(import.meta.dir, "..", "data");
 const RESULTS_FILE = join(DATA_DIR, "google-search-results.json");
+const SOURCE_FILES = [
+  "ccisearch-cci.json",
+  "ccisearch-foreign.json",
+  "ccisearch-overseas.json",
+  "shokokai.json",
+  "syoutengai.json",
+] as const;
 
 interface SearchResult {
   results: {
@@ -130,9 +137,7 @@ async function loadExistingResults(): Promise<Map<string, QueryEntry>> {
 
 async function main() {
   const limit = Number(process.env.LIMIT || 0);
-  const files = (await readdir(DATA_DIR)).filter(
-    (f) => f.endsWith(".json") && f !== "google-search-results.json",
-  );
+  const files: string[] = [...SOURCE_FILES];
 
   const queries: { query: string; source: string; name: string }[] = [];
   for (const file of files) {
