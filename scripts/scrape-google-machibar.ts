@@ -92,8 +92,9 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult| nu
   })))
 
 
-  const aiOverviewText = await page.locator("section").innerText()
-  const aiOverviewLinks = await page.locator("section").locator("a").evaluateAll(elements =>
+  const aiOverview = page.locator("section").first()
+  const aiOverviewText = await aiOverview.innerText()
+  const aiOverviewLinks = await aiOverview.locator("a").evaluateAll(elements =>
     elements.map(el => (el.href))
   );
 
