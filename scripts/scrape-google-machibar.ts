@@ -62,7 +62,7 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult| nu
     waitUntil: "domcontentloaded",
     timeout: 30000,
   });
-  await sleep(3000 + Math.random() * 2000);
+  await sleep(10000 + Math.random() * 2000);
 
   if (await isSorryPage(page)) {
     console.error("  sorry page detected, waiting 10 minutes...");
