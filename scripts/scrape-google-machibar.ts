@@ -82,15 +82,14 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult| nu
 
   await humanScroll(page);
 
-  const links = page.locator("a:has(h3)")
-  const count = await links.count()
+  const titles = page.locator("a > h3")
+  const cites = page.locator("a > div > div > div > div > cite")
+  const count = Math.min(await titles.count(), await cites.count(), 10)
 
-  const results = await Promise.all(Array.from({ length: Math.min(count, 10) }, (_, i) => links.nth(i))
-    .map(async l =>
-  ({
-    title: await l.locator("h3").innerText(),
-    link: await l.getAttribute("href")
-    })))
+  const results = await Promise.all(Array.from({ length: count }, async (_, i) => ({
+    title: await titles.nth(i).innerText(),
+    link: await cites.nth(i).innerText(),
+  })))
 
 
   const aiOverviewText = await page.locator("section").innerText()
