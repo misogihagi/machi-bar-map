@@ -133,13 +133,16 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult| nu
   await humanScroll(page);
 
   const titles = page.locator("a > h3")
-  const cites = page.locator("a > div > div > div > div > cite")
+  const cites = page.locator('a > h3').locator('..');
   const count = Math.min(await titles.count(), await cites.count(), 10)
 
-  const results = await Promise.all(Array.from({ length: count }, async (_, i) => ({
-    title: await titles.nth(i).innerText(),
-    link: await cites.nth(i).innerText(),
-  })))
+  const results = await Promise.all(Array.from({ length: count }, async (_, i) => {
+    const href = await cites.nth(i).getAttribute("href");
+    return {
+      title: await titles.nth(i).innerText(),
+      link: href ? await resolveGoogleUrl(href) : null,
+    };
+  }))
 
 
   const aiOverview = page.locator("section").first()
