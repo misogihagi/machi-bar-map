@@ -57,6 +57,54 @@ async function isSorryPage(page: Page): Promise<boolean> {
   return false;
 }
 
+const resolvedUrlCache = new Map<string, string>();
+const isGoogleRedirect = (url: string) =>
+  /^https?:\/\/(?:[a-z]+\.)?google\.[a-z.]+\/(?:goto|url)\?/.test(url);
+
+function extractTargetUrl(url: string): string | null {
+  if (!isGoogleRedirect(url)) return null;
+  const target = new URL(url).searchParams.get("url");
+  if (!target) return null;
+  const decoded = decodeURIComponent(target);
+  if (/^https?:\/\//i.test(decoded)) return decoded;
+  return null;
+}
+
+async function resolveGoogleUrl(url: string): Promise<string> {
+  const direct = extractTargetUrl(url);
+  if (direct) return direct;
+//  if (!isGoogleRedirect(url)) return url;
+  const cached = resolvedUrlCache.get(url);
+  if (cached) return cached;
+
+  let resolved = url;
+  try {
+    const res = await fetch(url.startsWith("/") ? "https://www.google.com" + url : url, {
+      redirect: "manual",
+      headers: { "user-agent": UA, referer: "https://www.google.com/", "accept-language": "ja" },
+    });
+    const location = res.headers.get("location");
+    if (location) {
+      return location
+      resolved = new URL(location, url).href;
+    } else {
+      const body = await res.text();
+      const found =
+        body.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]+url=([^"'\s>]+)/i)?.[1] ??
+        body.match(/<meta[^>]+content=["'][^"']*url=([^"'\s>]+)/i)?.[1] ??
+        body.match(/URL=["']([^"']+)["']/i)?.[1] ??
+        body.match(/location\.replace\(["']([^"']+)["']\)/)?.[1];
+      if (found) resolved = new URL(decodeURIComponent(found.replace(/&amp;/g, "&")), url).href;
+    }
+  } catch (err) {
+    console.error(`  failed to resolve ${url}: ${err}`);
+  }
+
+  resolvedUrlCache.set(url, resolved);
+  await sleep(300);
+  return resolved;
+}
+
 async function googleSearch(page: Page, query: string): Promise<SearchResult| null> {
   await page.goto(`https://www.google.com/search?q=${query}`, {
     waitUntil: "domcontentloaded",
@@ -96,7 +144,9 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult| nu
   const aiOverviewText = await aiOverview.innerText()
   const aiOverviewLinks = await aiOverview.locator("a").evaluateAll(elements =>
     elements.map(el => (el.href))
-  );
+  )) {
+    aiOverviewLinks.push(await resolveGoogleUrl(href))
+  }
 
   return {results, "aiOverview": {text:aiOverviewText, links:aiOverviewLinks}}
 }
@@ -126,12 +176,12 @@ async function main() {
       
       // (一社)となっているものは商工会議所ではなく商工会議所連合会
       const isFederation = /^[(（]一社[)）]/.test(raw);
-      const name = isFederation
-        ? `${raw.replace(/^[(（]一社[)）]\s*/, "")}商工会議所連合会`
-        : raw.trim();
-      const query = isCci
-        ? `${name} 街バル`
-        : `${raw.trim()} 街バル`;
+      const name = raw.trim();
+      const query = isFederation
+        ? `${name.replace(/^[(（]一社[)）]\s*/, "")}商工会議所連合会 街バル` :
+        isCci ?
+        `${name}商工会議所 街バル` :
+        `${name} 街バル`;
       queries.push({ query, source: file, name });
     }
   }
@@ -147,7 +197,7 @@ async function main() {
     headless: false,
   });
   const context = await browser.newContext({
-      userAgent:"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      userAgent: UA
 })
   const page = await context.newPage();
 
@@ -161,7 +211,7 @@ async function main() {
     existing.set(query, { query, source, name, results });
     done++;
 
-    if (done % 20 === 0) {
+    if (done % 3 === 0) {
       await Bun.write(RESULTS_FILE, JSON.stringify(Array.from(existing.values()), null, 2) + "\n");
       console.error(`  checkpoint saved`);
     }
