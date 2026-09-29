@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 const DATA_DIR = join(import.meta.dir, "..", "data");
 const RESULTS_FILE = join(DATA_DIR, "google-search-results.json");
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const SOURCE_FILES = [
   "ccisearch-cci.json",
   "ccisearch-foreign.json",
