@@ -145,7 +145,7 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult| nu
   }))
 
 
-  const aiOverview = page.locator("section").last()
+  const aiOverview = page.locator("div + div > div > div > div > div > div > div > div > div > section")
   const aiOverviewText = await aiOverview.innerText()
   const aiOverviewLinks: string[] = []
   for (const href of await aiOverview.locator("a").evaluateAll(elements =>
