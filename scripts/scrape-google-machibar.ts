@@ -201,8 +201,13 @@ async function main() {
   console.error(`Total unique queries: ${unique.length}`);
 
   const existing = await loadExistingResults();
-  const pending = unique.filter((q) => !existing.has(q.query));
-  console.error(`Pending: ${pending.length} (skipping ${unique.length - pending.length} already done)`);
+  const pending = unique.filter((q) => {
+    const entry = existing.get(q.query);
+    if (!entry) return true;
+    return entry.results === null;
+  });
+  const retryCount = pending.filter((q) => existing.has(q.query)).length;
+  console.error(`Pending: ${pending.length} (${retryCount} retry, ${pending.length - retryCount} new, ${unique.length - pending.length} already done)`);
 
   const browser = await chromium.launch({
     headless: false,
