@@ -22,7 +22,7 @@ interface SearchResult {
   aiOverview: {
     text: string;
     links: string[];
-  }
+  } | null;
 }
 
 interface QueryEntry {
@@ -146,15 +146,20 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult| nu
 
 
   const aiOverview = page.locator("div + div > div > div > div > div > div > div > div > div > section")
-  const aiOverviewText = await aiOverview.innerText()
+  if ((await aiOverview.count()) === 0) {
+    console.error("  ai overview not found")
+    return {results, aiOverview: null}
+  }
+
+  const aiOverviewText = await aiOverview.first().innerText()
   const aiOverviewLinks: string[] = []
-  for (const href of await aiOverview.locator("a").evaluateAll(elements =>
+  for (const href of await aiOverview.first().locator("a").evaluateAll(elements =>
     elements.map(el => (el.href))
   )) {
     aiOverviewLinks.push(await resolveGoogleUrl(href))
   }
 
-  return {results, "aiOverview": {text:aiOverviewText, links:aiOverviewLinks}}
+  return {results, aiOverview: {text:aiOverviewText, links:aiOverviewLinks}}
 }
 
 async function loadExistingResults(): Promise<Map<string, QueryEntry>> {
