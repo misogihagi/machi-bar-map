@@ -7,6 +7,9 @@
     "@types/bun": "latest",
     "playwright": "^1.62.1"
   },
+  "scripts": {
+    "extract:machibar": "bun scripts/extract-machibar-ollama.ts"
+  },
   "peerDependencies": {
     "typescript": "^5"
   }
