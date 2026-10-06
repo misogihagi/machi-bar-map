@@ -58,3 +58,69 @@ Googleトレンドの分析によると、街バルの注目度は2010年付近�
 * **非営利性の維持:** 広告掲載は実費（サーバー代等）の補填を目的とし、過度な商業化を避ける。
 * **オープンデータ化:** 蓄積された過去の開催データも含め、地域の資産として活用可能な形で保持する。
 
+---
+
+## 6. 街バル情報の抽出（Ollama）
+
+Google検索結果（通常の検索結果リスト＋AI Overview本文）をローカルの LLM に渡し、街バル・はしご酒イベントの情報を構造化して CSV 化する。
+
+### 使用モデル
+
+**`qwen3.5:9b`**（`OLLAMA_MODEL` 環境変数で変更可能）
+
+* GPU なし（CPU 推論）環境では、20B 以上のモデル（`gpt-oss:20b`、`qwen3-coder` 等）は1件あたりの推論が過重で、3,000件規模の処理には現実的でない。
+* `qwen3.5:9b` は thinking（思考出力）を無効化（`think: false`）し入力トークンを適正化することで、CPU でも安定して高速・高精度に JSON を抽出できることを確認済み。
+
+### スクリプト
+
+`scripts/extract-machibar-ollama.ts`
+
+| 項目 | 内容 |
+| --- | --- |
+| **入力** | `data/google-search-results.json` |
+| **出力** | `data/machibar-extracted.csv` |
+| **中断・再開** | `data/.machibar-progress.json` に処理済みクエリを記録。`Ctrl+C` で停止後、再実行すれば続きから再開 |
+| **複数イベントの展開** | 1つの AI Overview に複数の街バルが含まれる場合、行を分割してすべて抽出 |
+
+**抽出カラム:**
+
+1. `query` — 検索クエリ
+2. `source` — 元データファイル名
+3. `search_name` — 商工会議所・商店街名
+4. `has_bar` — 街バル・はしご酒イベントの有無（TRUE / FALSE）
+5. `bar_name` — イベント名
+6. `official_url` — 公式サイトURL
+7. `sns` — SNSアカウント/ページURL
+8. `last_held_date` — 最後に開催された日・時期
+9. `next_date` — 次回開催日
+10. `next_venue` — 開催地・会場エリア
+11. `lat` / `lng` — 座標（本文中にない場合は空文字）
+
+### 実行コマンド
+
+全件処理:
+
+```bash
+bun run extract:machibar
+```
+
+件数を制限して試す（例: 10件）:
+
+```bash
+LIMIT=10 bun run extract:machibar
+```
+
+### 出力サンプル
+
+```csv
+query,source,search_name,has_bar,bar_name,official_url,sns,last_held_date,next_date,next_venue,lat,lng
+北海道商工会議所連合会 街バル,ccisearch-cci.json,(一社）北海道,TRUE,函館西部地区バル街,,,,,函館市西部エリア,,
+北海道商工会議所連合会 街バル,ccisearch-cci.json,(一社）北海道,TRUE,帯広☆街バル,,,2026-06,,帯広市まちなか（中心街）,,
+北海道商工会議所連合会 街バル,ccisearch-cci.json,(一社）北海道,TRUE,あさひかわ買物公園バル,https://www.kaimonokouen.com/event/8042,,,,旭川市あさひかわ買物公園通り周辺,,
+函館商工会議所 街バル,ccisearch-cci.json,函館,TRUE,函館西部地区バル街,https://bar-gai.com/,https://www.instagram.com/bargai.hakodate/,2026-09-06,,函館市西部地区（旧市街）,,
+小樽商工会議所 街バル,ccisearch-cci.json,小樽,FALSE,,,,,,,,
+```
+
+> [!NOTE]
+> 検索結果や AI Overview 本文に「緯度・経度」が直接記載されているケースは稀なため、`lat` / `lng` は空文字になることが多い。その代わり `next_venue`（開催地）や `search_name`（商工会議所名・地域名）が抽出できているため、全件完了後に国土地理院 API 等のオープンジオコーダーを使って会場名から座標を一括補完するのが確実。
+
