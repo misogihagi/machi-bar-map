@@ -1,3 +1,4 @@
+import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const DATA_DIR = join(import.meta.dir, "..", "data");
@@ -270,7 +271,7 @@ async function main() {
   // CSVの初期化
   const csvFile = Bun.file(OUTPUT_CSV);
   if (!(await csvFile.exists())) {
-    await Bun.write(OUTPUT_CSV, CSV_HEADER + "\n");
+    await appendFile(OUTPUT_CSV, CSV_HEADER + "\n");
   }
 
   const startTime = Date.now();
@@ -301,17 +302,9 @@ async function main() {
         lng: bar.lng != null ? String(bar.lng) : "",
       }));
 
-      const csvLines: string[] = [];
       for (const row of rows) {
-        csvLines.push(toCSVRow(row));
+        await appendFile(OUTPUT_CSV, toCSVRow(row) + "\n");
         if (row.hasBar) foundBars++;
-      }
-
-      if (csvLines.length > 0) {
-        await Bun.write(
-          OUTPUT_CSV,
-          (await Bun.file(OUTPUT_CSV).text()) + csvLines.join("\n") + "\n",
-        );
       }
       processed++;
     } catch (err) {
@@ -333,10 +326,7 @@ async function main() {
         lat: "",
         lng: "",
       };
-      await Bun.write(
-        OUTPUT_CSV,
-        (await Bun.file(OUTPUT_CSV).text()) + toCSVRow(fallbackRow) + "\n",
-      );
+      await appendFile(OUTPUT_CSV, toCSVRow(fallbackRow) + "\n");
       processed++;
     }
 
