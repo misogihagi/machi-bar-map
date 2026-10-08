@@ -27,7 +27,8 @@ interface RawBarItem {
   official_url?: string;
   sns?: string;
   last_held_date?: string;
-  next_date?: string;
+  next_start_date?: string;
+  next_end_date?: string;
   next_venue?: string;
   lat?: string | number;
   lng?: string | number;
@@ -42,7 +43,8 @@ interface ExtractedBar {
   officialUrl: string;
   sns: string;
   lastHeldDate: string;
-  nextDate: string;
+  nextStartDate: string;
+  nextEndDate: string;
   nextVenue: string;
   lat: string;
   lng: string;
@@ -68,7 +70,8 @@ const SYSTEM_PROMPT = `あなたは日本の街バル・はしご酒イベント
       "official_url": "公式サイトURL（なければ空文字）",
       "sns": "SNSアカウントURL（なければ空文字）",
       "last_held_date": "直近・最後に開催された日または時期（例: 2026-09-06 または 2026年9月。不明なら空文字）",
-      "next_date": "次回開催日（不明なら空文字）",
+      "next_start_date": "次回開催開始日（例: 2026-10-10。不明なら空文字）",
+      "next_end_date": "次回開催終了日（例: 2026-10-12。不明なら空文字）",
       "next_venue": "開催エリア・会場・駅名など（不明なら空文字）",
       "lat": "開催地の緯度（不明なら空文字）",
       "lng": "開催地の経度（不明なら空文字）"
@@ -85,7 +88,8 @@ const SYSTEM_PROMPT = `あなたは日本の街バル・はしご酒イベント
       "official_url": "",
       "sns": "",
       "last_held_date": "",
-      "next_date": "",
+      "next_start_date": "",
+      "next_end_date": "",
       "next_venue": "",
       "lat": "",
       "lng": ""
@@ -201,7 +205,7 @@ const CSV_HEADER = [
   "official_url",
   "sns",
   "last_held_date",
-  "next_date",
+  "next_start_date","next_end_date",
   "next_venue",
   "lat",
   "lng",
@@ -226,7 +230,8 @@ function toCSVRow(bar: ExtractedBar): string {
     bar.officialUrl,
     bar.sns,
     bar.lastHeldDate,
-    bar.nextDate,
+    bar.nextStartDate,
+    bar.nextEndDate,
     bar.nextVenue,
     bar.lat,
     bar.lng,
@@ -296,7 +301,8 @@ async function main() {
         officialUrl: bar.official_url || "",
         sns: bar.sns || "",
         lastHeldDate: bar.last_held_date || "",
-        nextDate: bar.next_date || "",
+        nextStartDate: bar.next_start_date || "",
+        nextEndDate: bar.next_end_date || "",
         nextVenue: bar.next_venue || "",
         lat: bar.lat != null ? String(bar.lat) : "",
         lng: bar.lng != null ? String(bar.lng) : "",
@@ -321,7 +327,8 @@ async function main() {
         officialUrl: "",
         sns: "",
         lastHeldDate: "",
-        nextDate: "",
+        nextStartDate: "",
+        nextEndDate: "",
         nextVenue: "",
         lat: "",
         lng: "",

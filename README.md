@@ -92,7 +92,7 @@ Google検索結果（通常の検索結果リスト＋AI Overview本文）をロ
 6. `official_url` — 公式サイトURL
 7. `sns` — SNSアカウント/ページURL
 8. `last_held_date` — 最後に開催された日・時期
-9. `next_date` — 次回開催日
+9. `next_start_date`/`next_end_date` — 次回開催期間（開始日・終了日）
 10. `next_venue` — 開催地・会場エリア
 11. `lat` / `lng` — 座標（本文中にない場合は空文字）
 
@@ -113,7 +113,7 @@ LIMIT=10 bun run extract:machibar
 ### 出力サンプル
 
 ```csv
-query,source,search_name,has_bar,bar_name,official_url,sns,last_held_date,next_date,next_venue,lat,lng
+query,source,search_name,has_bar,bar_name,official_url,sns,last_held_date,next_start_date,next_end_date,next_venue,lat,lng
 北海道商工会議所連合会 街バル,ccisearch-cci.json,(一社）北海道,TRUE,函館西部地区バル街,,,,,函館市西部エリア,,
 北海道商工会議所連合会 街バル,ccisearch-cci.json,(一社）北海道,TRUE,帯広☆街バル,,,2026-06,,帯広市まちなか（中心街）,,
 北海道商工会議所連合会 街バル,ccisearch-cci.json,(一社）北海道,TRUE,あさひかわ買物公園バル,https://www.kaimonokouen.com/event/8042,,,,旭川市あさひかわ買物公園通り周辺,,
