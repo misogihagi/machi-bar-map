@@ -188,11 +188,18 @@ async function main() {
       // (一社)となっているものは商工会議所ではなく商工会議所連合会
       const isFederation = /^[(（]一社[)）]/.test(raw);
       const name = raw.trim();
-      const query = isFederation
+      const base = isFederation
         ? `${name.replace(/^[(（]一社[)）]\s*/, "")}商工会議所連合会 街バル` :
         isCci ?
         `${name}商工会議所 街バル` :
         `${name} 街バル`;
+      const prefecture =
+        file === "syoutengai.json" &&
+        typeof entry.prefecture === "string" &&
+        entry.prefecture.trim()
+          ? `${entry.prefecture.trim()} `
+          : "";
+      const query = `${prefecture}${base}`;
       queries.push({ query, source: file, name });
     }
   }
