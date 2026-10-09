@@ -145,7 +145,7 @@ async function googleSearch(page: Page, query: string): Promise<SearchResult| nu
   }))
 
 
-  const aiOverview = page.locator("div + div > div > div > div > div > div > div > div > div > section")
+  const aiOverview = page.locator("div + div > div > div > div > div > div > div > div > section")
   if ((await aiOverview.count()) === 0) {
     console.error("  ai overview not found")
     return {results, aiOverview: null}
