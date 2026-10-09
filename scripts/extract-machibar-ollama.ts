@@ -9,6 +9,13 @@ const PROGRESS_FILE = join(DATA_DIR, ".machibar-progress.json");
 const OLLAMA_URL = "http://localhost:11434/api/chat";
 const MODEL = process.env.OLLAMA_MODEL || "qwen3.5:9b";
 
+// 公式サイト検証の設定
+const VERIFY_SITES = process.env.VERIFY_SITES !== "0"; // "0" で検証を無効化
+const VERIFY_RETRIES = Number(process.env.VERIFY_RETRIES || 3); // 1URLあたりの再試行回数
+const EXTRACT_ATTEMPTS = Number(process.env.EXTRACT_ATTEMPTS || 2); // 検証失敗時の再抽出一式の回数
+const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 15000);
+const FETCH_MAX_CHARS = Number(process.env.FETCH_MAX_CHARS || 4000);
+
 // ---------- types ----------
 
 interface SearchResultEntry {
@@ -129,22 +136,42 @@ function buildUserPrompt(entry: SearchResultEntry): string {
   return parts.join("\n");
 }
 
+const VERIFY_SYSTEM_PROMPT = `あなたはWebページ検証アシスタントです。
+提示されたイベント名（街バル・はしご酒イベント）と、実際に取得したWebページの内容を比較し、そのURLが本当にそのイベントの公式サイト（主催者・開催情報を掲載した適切なページを含む）であるかを判定してください。
+必ず指定のJSONフォーマットのみを出力し、解説やマークダウンの補足は一切不要です。
+
+【判定基準】
+- ページ内容がイベント名・開催地・開催日・主催者などの情報と一致していれば valid: true。
+- 次の場合は valid: false とする:
+  - 全く無関係な内容、別のイベント・サービス・企業のページ
+  - 単なるポータル/検索結果/まとめサイトのトップページ
+  - 404・エラーページ、ドメイン販売/パーキングページ、ログイン要求のみのページ
+  - 情報が乏しく公式サイトと判断できない場合
+- 判定は与えられたページ本文に基づいて行い、推測で valid: true にしないこと。
+
+【出力JSON形式】
+{
+  "valid": true,
+  "reason": "判定理由を簡潔に（日本語）"
+}`;
+
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 // ---------- ollama ----------
 
-async function callOllama(userPrompt: string, retries = 3): Promise<string> {
+async function callOllamaMessages(
+  systemPrompt: string,
+  messages: { role: string; content: string }[],
+  retries = 3,
+): Promise<string> {
   let lastError: Error | null = null;
   for (let i = 0; i < retries; i++) {
     try {
       const body = {
         model: MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
+        messages: [{ role: "system", content: systemPrompt }, ...messages],
         stream: false,
         think: false, // qwen3.5 の thinking モードを無効化（CPU推論高速化）
         options: {
@@ -177,6 +204,24 @@ async function callOllama(userPrompt: string, retries = 3): Promise<string> {
   throw lastError || new Error("Failed to call Ollama after retries");
 }
 
+async function callOllama(userPrompt: string, feedback?: string, retries = 3): Promise<string> {
+  const messages: { role: string; content: string }[] = [
+    { role: "user", content: userPrompt },
+  ];
+  if (feedback) {
+    messages.push({ role: "user", content: feedback });
+  }
+  return callOllamaMessages(SYSTEM_PROMPT, messages, retries);
+}
+
+async function callOllamaWithPrompt(systemPrompt: string, userPrompt: string, retries = 3): Promise<string> {
+  return callOllamaMessages(
+    systemPrompt,
+    [{ role: "user", content: userPrompt }],
+    retries,
+  );
+}
+
 function parseResponse(raw: string): RawBarItem[] {
   // ```json ... ``` ブロックがあれば優先して抜き出す
   const codeBlockMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -201,6 +246,170 @@ function parseResponse(raw: string): RawBarItem[] {
   }
 
   return parsed.bars;
+}
+
+// ---------- 公式サイト検証 ----------
+
+interface VerifyResult {
+  valid: boolean;
+  reason: string;
+}
+
+function extractJsonObject(raw: string): any {
+  const codeBlockMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const targetText = codeBlockMatch ? codeBlockMatch[1] : raw;
+  const jsonMatch = targetText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error(`No JSON found: ${raw.slice(0, 200)}`);
+  return JSON.parse(jsonMatch[0]);
+}
+
+function htmlToText(html: string): { title: string; text: string } {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch
+    ? titleMatch[1].replace(/\s+/g, " ").trim()
+    : "";
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { title, text };
+}
+
+async function fetchPageText(url: string): Promise<{
+  ok: boolean;
+  status: number | null;
+  finalUrl: string;
+  title: string;
+  text: string;
+  error?: string;
+}> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept-Language": "ja,en;q=0.9",
+      },
+    });
+    const raw = await res.text();
+    const { title, text } = htmlToText(raw);
+    return {
+      ok: res.ok,
+      status: res.status,
+      finalUrl: res.url || url,
+      title,
+      text: text.slice(0, FETCH_MAX_CHARS),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: null,
+      finalUrl: url,
+      title: "",
+      text: "",
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function verifyOfficialUrl(
+  barName: string,
+  url: string,
+): Promise<VerifyResult> {
+  let lastReason = "検証に失敗しました";
+  for (let attempt = 1; attempt <= VERIFY_RETRIES; attempt++) {
+    const page = await fetchPageText(url);
+
+    if (!page.ok) {
+      lastReason = page.error
+        ? `アクセス失敗: ${page.error}`
+        : `HTTP ${page.status} (${page.finalUrl})`;
+      console.error(
+        `    [VERIFY ${attempt}/${VERIFY_RETRIES}] アクセス失敗 ${url} -> ${lastReason}`,
+      );
+      if (attempt < VERIFY_RETRIES) await sleep(1000 * attempt);
+      continue;
+    }
+
+    if (!page.text) {
+      lastReason = "ページ本文が空（JSレンダリングのみ/ブロックの可能性）";
+      console.error(
+        `    [VERIFY ${attempt}/${VERIFY_RETRIES}] 本文取得できず ${url} -> ${lastReason}`,
+      );
+      if (attempt < VERIFY_RETRIES) await sleep(1000 * attempt);
+      continue;
+    }
+
+    const verifyPrompt = [
+      `イベント名: ${barName}`,
+      `URL: ${url}`,
+      `最終URL: ${page.finalUrl}`,
+      `ページタイトル: ${page.title || "(取得できず)"}`,
+      ``,
+      `ページ本文抜粋:`,
+      page.text,
+    ].join("\n");
+
+    try {
+      const raw = await callOllamaWithPrompt(VERIFY_SYSTEM_PROMPT, verifyPrompt);
+      const parsed = extractJsonObject(raw);
+      const valid = !!parsed.valid;
+      const reason = String(parsed.reason || "").trim();
+      if (valid) {
+        console.error(`    [VERIFY OK] ${barName} | ${url}`);
+        return { valid: true, reason };
+      }
+      lastReason = reason || "公式サイトと確認できず";
+      console.error(
+        `    [VERIFY ${attempt}/${VERIFY_RETRIES}] 不一致 ${url} -> ${lastReason}`,
+      );
+    } catch (err) {
+      lastReason = `判定エラー: ${err instanceof Error ? err.message : String(err)}`;
+      console.error(
+        `    [VERIFY ${attempt}/${VERIFY_RETRIES}] ${lastReason}`,
+      );
+    }
+
+    if (attempt < VERIFY_RETRIES) await sleep(1000 * attempt);
+  }
+  return { valid: false, reason: lastReason };
+}
+
+function toExtractedRows(
+  entry: SearchResultEntry,
+  items: RawBarItem[],
+): ExtractedBar[] {
+  return items.map((bar) => ({
+    query: entry.query,
+    source: entry.source,
+    searchName: entry.name,
+    hasBar: !!bar.has_bar,
+    barName: bar.bar_name || "",
+    officialUrl: bar.official_url || "",
+    sns: bar.sns || "",
+    lastHeldDate: bar.last_held_date || "",
+    nextStartDate: bar.next_start_date || "",
+    nextEndDate: bar.next_end_date || "",
+    nextVenue: bar.next_venue || "",
+    lat: bar.lat != null ? String(bar.lat) : "",
+    lng: bar.lng != null ? String(bar.lng) : "",
+  }));
 }
 
 // ---------- progress / CSV ----------
