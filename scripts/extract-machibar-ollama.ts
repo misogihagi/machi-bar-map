@@ -129,35 +129,52 @@ function buildUserPrompt(entry: SearchResultEntry): string {
   return parts.join("\n");
 }
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 // ---------- ollama ----------
 
-async function callOllama(userPrompt: string): Promise<string> {
-  const body = {
-    model: MODEL,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-    stream: false,
-    think: false, // qwen3.5 の thinking モードを無効化（CPU推論高速化）
-    options: {
-      temperature: 0.1,
-      num_predict: 1024,
-    },
-  };
+async function callOllama(userPrompt: string, retries = 3): Promise<string> {
+  let lastError: Error | null = null;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const body = {
+        model: MODEL,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        stream: false,
+        think: false, // qwen3.5 の thinking モードを無効化（CPU推論高速化）
+        options: {
+          temperature: 0.1,
+          num_predict: 1024,
+        },
+      };
 
-  const res = await fetch(OLLAMA_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+      const res = await fetch(OLLAMA_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-  if (!res.ok) {
-    throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
+      if (!res.ok) {
+        throw new Error(`Ollama error: ${res.status} ${await res.text()}`);
+      }
+
+      const data = (await res.json()) as { message: { content: string } };
+      return data.message.content;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (i < retries - 1) {
+        const waitMs = 1000 * (i + 1);
+        console.error(`  [RETRY ${i + 1}/${retries - 1}] ${lastError.message} - waiting ${waitMs}ms...`);
+        await sleep(waitMs);
+      }
+    }
   }
-
-  const data = (await res.json()) as { message: { content: string } };
-  return data.message.content;
+  throw lastError || new Error("Failed to call Ollama after retries");
 }
 
 function parseResponse(raw: string): RawBarItem[] {
@@ -170,7 +187,12 @@ function parseResponse(raw: string): RawBarItem[] {
     throw new Error(`No JSON found in response: ${raw.slice(0, 200)}`);
   }
 
-  const parsed = JSON.parse(jsonMatch[0]);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch (err) {
+    throw new Error(`Failed to parse JSON: ${(err as Error).message} | raw: ${targetText.slice(0, 200)}`);
+  }
   if (!parsed.bars || !Array.isArray(parsed.bars)) {
     // bars キーではなく配列自体またはオブジェクト単体の場合のフォールバック
     if (Array.isArray(parsed)) return parsed;
