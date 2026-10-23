@@ -8,6 +8,7 @@
     "playwright": "^1.62.1"
   },
   "scripts": {
+    "build:calendar": "bun scripts/generate-calendar.ts",
     "extract:machibar": "bun scripts/extract-machibar-ollama.ts"
   },
   "peerDependencies": {
